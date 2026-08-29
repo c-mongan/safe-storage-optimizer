@@ -196,13 +196,13 @@ def render_mermaid(report: dict[str, Any], max_nodes: int = 24) -> str:
     free = report["disk"]["free_human"]
     lines = [
         "flowchart LR",
-        f'  n0["This computer<br/>Used {used} · Free {free}"]',
+        f'  n0["This computer<br/>Used {used} | Free {free}"]',
     ]
     for path in selected:
         item = candidates[path]
         try:
             relative = path.relative_to(home)
-            label = str(relative) if len(relative.parts) <= 2 else path.name
+            label = relative.as_posix() if len(relative.parts) <= 2 else path.name
         except ValueError:
             label = path.name or str(path)
         lines.append(
