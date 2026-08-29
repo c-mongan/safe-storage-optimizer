@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -72,7 +73,7 @@ class StorageAuditTests(unittest.TestCase):
         self.assertIn("n1 --> n2", graph)
         self.assertIn("classDef storage", graph)
 
-    def test_command_writes_all_three_reports(self) -> None:
+    def test_command_writes_dashboard_plan_and_comparison(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             home = Path(temp) / "home"
             output = Path(temp) / "output"
@@ -80,15 +81,16 @@ class StorageAuditTests(unittest.TestCase):
             downloads.mkdir(parents=True)
             (downloads / "large.bin").write_bytes(b"x" * 1024)
 
+            command = [
+                sys.executable,
+                str(SCRIPT),
+                "--home",
+                str(home),
+                "--output-dir",
+                str(output),
+            ]
             subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "--home",
-                    str(home),
-                    "--output-dir",
-                    str(output),
-                ],
+                command,
                 check=True,
                 capture_output=True,
                 text=True,
@@ -97,7 +99,71 @@ class StorageAuditTests(unittest.TestCase):
             self.assertTrue((output / "storage-audit.json").is_file())
             self.assertTrue((output / "storage-audit.md").is_file())
             self.assertTrue((output / "storage-map.mmd").is_file())
+            self.assertTrue((output / "storage-dashboard.html").is_file())
+            self.assertTrue((output / "cleanup-plan.json").is_file())
             self.assertIn("```mermaid", (output / "storage-audit.md").read_text())
+            plan = json.loads((output / "cleanup-plan.json").read_text())
+            self.assertEqual(plan["state"], "DRAFT_REVIEW_ONLY")
+            self.assertFalse(plan["destructive_actions_authorized"])
+            self.assertTrue(all(not item["approved"] for item in plan["candidates"]))
+
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            self.assertTrue((output / "storage-comparison.md").is_file())
+            comparison = json.loads((output / "storage-comparison.json").read_text())
+            self.assertIsInstance(comparison["free_change_bytes"], int)
+            self.assertTrue(comparison["same_roots"])
+
+    def test_activity_evidence_uses_newest_content(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            older = root / "older.bin"
+            newer = root / "newer.bin"
+            older.write_bytes(b"old")
+            newer.write_bytes(b"new")
+            older_time = 1_600_000_000
+            newer_time = 1_700_000_000
+            os.utime(older, (older_time, older_time))
+            os.utime(newer, (newer_time, newer_time))
+            scanner = storage_audit.Scanner(10, 20, include_cloud=False)
+
+            scanner.scan(root)
+
+            self.assertEqual(scanner.modified_times[str(root)], newer_time)
+
+    def test_comparison_rejects_a_different_home(self) -> None:
+        baseline = {"home": "/one"}
+        current = {"home": "/two"}
+
+        with self.assertRaisesRegex(ValueError, "different home"):
+            storage_audit.build_comparison(baseline, current)
+
+    def test_dashboard_escapes_private_path_markup(self) -> None:
+        report = {
+            "generated_at": "now",
+            "platform": "test",
+            "disk": {
+                "total": 100,
+                "used": 50,
+                "free": 50,
+                "total_human": "100.0 B",
+                "free_human": "50.0 B",
+            },
+            "largest_directories": [
+                {
+                    "path": "/tmp/<script>alert(1)</script>",
+                    "bytes": 10,
+                    "size": "10.0 B",
+                    "days_since_modified": 1,
+                }
+            ],
+            "largest_files": [],
+        }
+        plan = storage_audit.build_cleanup_plan(report)
+
+        dashboard = storage_audit.render_html(report, plan)
+
+        self.assertNotIn("<script>alert(1)</script>", dashboard)
+        self.assertIn("&lt;script&gt;", dashboard)
 
 
 if __name__ == "__main__":

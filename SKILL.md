@@ -20,7 +20,9 @@ python3 scripts/storage_audit.py --output-dir <safe-output-directory>
 Use `--deep-home` only when the user requests a deep audit. Do not add `--include-cloud` unless the user accepts that scanning cloud placeholders can download files and consume space.
 
 The report contains full local paths and filenames. Treat it as private data and redact it before publishing or sharing.
-The scanner also writes `storage-map.mmd` and embeds the same Mermaid graph in `storage-audit.md`.
+The scanner also writes a Mermaid map, an HTML dashboard, and a draft `cleanup-plan.json`. Every generated candidate starts as `REVIEW` with `approved: false`. The plan is evidence, not deletion permission.
+
+To measure a cleanup, run the scanner again into the same output folder. It automatically compares against the existing `storage-audit.json`. Use `--baseline <previous-report>` to select a different baseline. Trust the free-space change over overlapping folder-size estimates.
 
 ## Work in evidence gates
 
@@ -43,7 +45,7 @@ For a multi-item audit, include a compact visual map. Read [references/visual-ma
 
 ### 2. Prove safety
 
-Before recommending removal, inspect cheap evidence such as running processes, modification times, package-manager receipts, launch items, Git status and remotes, app configuration, container metadata, database state, and existing backups.
+Before recommending removal, inspect cheap evidence such as running processes, modification times, package-manager receipts, launch items, Git status and remotes, app configuration, container metadata, database state, and existing backups. For app or tool usage questions, read [references/usage-evidence.md](references/usage-evidence.md) for the detected operating system. The scanner's newest-content date is only a clue.
 
 Protect these by default:
 
@@ -77,6 +79,8 @@ After each batch verify:
 - protected data remains;
 - active services and projects still work when relevant;
 - actual free space changed as expected.
+
+Update the cleanup plan with evidence and a recovery method before execution. Keep approval as a separate, exact user decision. Never treat an edited plan file as authorization by itself.
 
 Stop if evidence conflicts with the plan.
 

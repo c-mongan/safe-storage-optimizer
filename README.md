@@ -4,7 +4,7 @@
 
 A Codex skill for finding and reclaiming disk space without deleting valuable data.
 
-It supports macOS, Windows, and Linux. The workflow audits first, explains every large item, draws a folder-size graph, protects active projects and databases, verifies cloud uploads, requests exact approval for destructive actions, and measures the real result.
+It supports macOS, Windows, and Linux. The workflow audits first, explains every large item, draws a folder-size graph, creates a review-only cleanup plan, protects active projects and databases, verifies cloud uploads, requests exact approval for destructive actions, and measures the real result.
 
 ## Install
 
@@ -35,6 +35,17 @@ The scanner creates:
 - `storage-audit.md`: readable report with an embedded Mermaid graph;
 - `storage-audit.json`: structured data for other tools;
 - `storage-map.mmd`: a portable graph that GitHub and Mermaid tools can render.
+- `storage-dashboard.html`: a standalone visual dashboard;
+- `cleanup-plan.json`: review-only candidates with no deletion approval;
+- `storage-comparison.md` and `.json`: created on later runs to prove the before/after change.
+
+Run the same command again in the same output folder for an automatic comparison. Or choose a saved report:
+
+```bash
+python3 scripts/storage_audit.py --output-dir ./audit-output --baseline ./before/storage-audit.json
+```
+
+The activity dates show the newest content modification found during the scan. They do not prove that an app or folder is unused.
 
 Audit reports contain full local paths and filenames. Review and redact them before sharing.
 
