@@ -20,6 +20,7 @@ python3 scripts/storage_audit.py --output-dir <safe-output-directory>
 Use `--deep-home` only when the user requests a deep audit. Do not add `--include-cloud` unless the user accepts that scanning cloud placeholders can download files and consume space.
 
 The report contains full local paths and filenames. Treat it as private data and redact it before publishing or sharing.
+The scanner also writes `storage-map.mmd` and embeds the same Mermaid graph in `storage-audit.md`.
 
 ## Work in evidence gates
 
@@ -37,6 +38,8 @@ For each important item report:
 - recovery method and expected space gain.
 
 Expand large folders from largest child to smallest. Continue recursively until the result explains the space or reaches ordinary user files.
+
+For a multi-item audit, include a compact visual map. Read [references/visual-map.md](references/visual-map.md). Show parent-child folder links, measured sizes, and the final `KEEP`, `MOVE`, `REMOVE`, `REBUILD`, or `REVIEW` decision. Do not let the graph replace the exact path table or safety evidence.
 
 ### 2. Prove safety
 

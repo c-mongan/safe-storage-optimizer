@@ -4,7 +4,7 @@
 
 A Codex skill for finding and reclaiming disk space without deleting valuable data.
 
-It supports macOS, Windows, and Linux. The workflow audits first, explains every large item, protects active projects and databases, verifies cloud uploads, requests exact approval for destructive actions, and measures the real result.
+It supports macOS, Windows, and Linux. The workflow audits first, explains every large item, draws a folder-size graph, protects active projects and databases, verifies cloud uploads, requests exact approval for destructive actions, and measures the real result.
 
 ## Install
 
@@ -29,6 +29,12 @@ python3 scripts/storage_audit.py --output-dir ./audit-output
 ```
 
 Use `--deep-home` for a deeper local scan. Cloud roots are skipped by default because recursive scans can download placeholder files and consume space.
+
+The scanner creates:
+
+- `storage-audit.md`: readable report with an embedded Mermaid graph;
+- `storage-audit.json`: structured data for other tools;
+- `storage-map.mmd`: a portable graph that GitHub and Mermaid tools can render.
 
 Audit reports contain full local paths and filenames. Review and redact them before sharing.
 

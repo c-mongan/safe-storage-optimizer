@@ -159,7 +159,80 @@ def ordered(heap: list[tuple[int, str]]) -> list[dict[str, Any]]:
     ]
 
 
-def render_markdown(report: dict[str, Any]) -> str:
+def mermaid_text(value: str) -> str:
+    """Keep a label readable without allowing Mermaid syntax injection."""
+    return (
+        value.replace("&", "and")
+        .replace('"', "'")
+        .replace("<", "(")
+        .replace(">", ")")
+        .replace("\n", " ")
+    )
+
+
+def render_mermaid(report: dict[str, Any], max_nodes: int = 24) -> str:
+    """Render a compact hierarchy of the largest scanned directories."""
+    home = Path(report["home"])
+    candidates: dict[Path, dict[str, Any]] = {}
+    for item in report["roots"] + report["largest_directories"]:
+        path = Path(item["path"])
+        if path == home:
+            continue
+        current = candidates.get(path)
+        if current is None or item["bytes"] > current["bytes"]:
+            candidates[path] = item
+
+    roots = [Path(item["path"]) for item in report["roots"] if Path(item["path"]) != home]
+    ranked = sorted(candidates, key=lambda path: candidates[path]["bytes"], reverse=True)
+    selected: list[Path] = []
+    for path in roots + ranked:
+        if path not in selected:
+            selected.append(path)
+        if len(selected) >= max(1, max_nodes - 1):
+            break
+
+    node_ids = {path: f"n{index + 1}" for index, path in enumerate(selected)}
+    used = report["disk"]["used_human"]
+    free = report["disk"]["free_human"]
+    lines = [
+        "flowchart LR",
+        f'  n0["This computer<br/>Used {used} · Free {free}"]',
+    ]
+    for path in selected:
+        item = candidates[path]
+        try:
+            relative = path.relative_to(home)
+            label = str(relative) if len(relative.parts) <= 2 else path.name
+        except ValueError:
+            label = path.name or str(path)
+        lines.append(
+            f'  {node_ids[path]}["{mermaid_text(label)}<br/>{item["size"]}"]'
+        )
+
+    selected_set = set(selected)
+    for path in selected:
+        ancestors = [
+            candidate
+            for candidate in selected_set
+            if candidate != path and path.is_relative_to(candidate)
+        ]
+        parent = max(ancestors, key=lambda candidate: len(candidate.parts), default=None)
+        parent_id = node_ids[parent] if parent else "n0"
+        lines.append(f"  {parent_id} --> {node_ids[path]}")
+
+    lines.extend(
+        [
+            "  classDef computer fill:#111827,color:#ffffff,stroke:#111827,stroke-width:2px;",
+            "  classDef storage fill:#dbeafe,color:#172554,stroke:#2563eb;",
+            "  class n0 computer;",
+        ]
+    )
+    if selected:
+        lines.append(f"  class {','.join(node_ids.values())} storage;")
+    return "\n".join(lines) + "\n"
+
+
+def render_markdown(report: dict[str, Any], mermaid: str | None = None) -> str:
     disk = report["disk"]
     lines = [
         "# Safe Storage Audit",
@@ -179,6 +252,20 @@ def render_markdown(report: dict[str, Any]) -> str:
     ]
     for root in report["roots"]:
         lines.append(f"- {root['size']}: `{root['path']}`")
+
+    if mermaid:
+        lines.extend(
+            [
+                "",
+                "## Storage map",
+                "",
+                "This map shows the largest scanned folders. It is evidence for review, not permission to delete.",
+                "",
+                "```mermaid",
+                mermaid.rstrip(),
+                "```",
+            ]
+        )
 
     lines.extend(["", "## Largest directories", ""])
     for item in report["largest_directories"]:
@@ -265,10 +352,14 @@ def main() -> int:
 
     json_path = output_dir / "storage-audit.json"
     markdown_path = output_dir / "storage-audit.md"
+    mermaid_path = output_dir / "storage-map.mmd"
+    mermaid = render_mermaid(report)
     json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    markdown_path.write_text(render_markdown(report), encoding="utf-8")
+    markdown_path.write_text(render_markdown(report, mermaid), encoding="utf-8")
+    mermaid_path.write_text(mermaid, encoding="utf-8")
     print(markdown_path)
     print(json_path)
+    print(mermaid_path)
     return 0
 
 
