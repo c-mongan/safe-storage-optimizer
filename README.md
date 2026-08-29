@@ -1,5 +1,7 @@
 # Safe Storage Optimizer
 
+[![Test](https://github.com/c-mongan/safe-storage-optimizer/actions/workflows/test.yml/badge.svg)](https://github.com/c-mongan/safe-storage-optimizer/actions/workflows/test.yml)
+
 A Codex skill for finding and reclaiming disk space without deleting valuable data.
 
 It supports macOS, Windows, and Linux. The workflow audits first, explains every large item, protects active projects and databases, verifies cloud uploads, requests exact approval for destructive actions, and measures the real result.
