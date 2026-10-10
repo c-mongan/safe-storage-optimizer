@@ -11,6 +11,7 @@ import json
 import os
 import platform
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -526,6 +527,17 @@ def render_markdown(report: dict[str, Any], mermaid: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def write_report(path: Path, contents: str) -> None:
+    """Replace a report privately without writing through an existing link."""
+    descriptor, temporary = tempfile.mkstemp(prefix=".storage-audit-", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(contents)
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--home", type=Path, default=Path.home())
@@ -543,7 +555,21 @@ def main() -> int:
 
     home = args.home.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    json_path = output_dir / "storage-audit.json"
+    markdown_path = output_dir / "storage-audit.md"
+    mermaid_path = output_dir / "storage-map.mmd"
+    dashboard_path = output_dir / "storage-dashboard.html"
+    cleanup_plan_path = output_dir / "cleanup-plan.json"
+    comparison_json_path = output_dir / "storage-comparison.json"
+    comparison_markdown_path = output_dir / "storage-comparison.md"
+    for path in (
+        json_path, markdown_path, mermaid_path, dashboard_path, cleanup_plan_path,
+        comparison_json_path, comparison_markdown_path,
+    ):
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            parser.error(f"report destination must be a regular file, not a symlink: {path}")
 
     baseline_path = (
         args.baseline.expanduser().resolve()
@@ -602,13 +628,6 @@ def main() -> int:
         "error_samples": scanner.errors,
     }
 
-    json_path = output_dir / "storage-audit.json"
-    markdown_path = output_dir / "storage-audit.md"
-    mermaid_path = output_dir / "storage-map.mmd"
-    dashboard_path = output_dir / "storage-dashboard.html"
-    cleanup_plan_path = output_dir / "cleanup-plan.json"
-    comparison_json_path = output_dir / "storage-comparison.json"
-    comparison_markdown_path = output_dir / "storage-comparison.md"
     mermaid = render_mermaid(report)
     cleanup_plan = build_cleanup_plan(report)
     comparison: dict[str, Any] | None = None
@@ -617,20 +636,14 @@ def main() -> int:
             comparison = build_comparison(baseline, report)
         except (KeyError, TypeError, ValueError) as exc:
             parser.error(f"invalid baseline {baseline_path}: {exc}")
-    json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    markdown_path.write_text(render_markdown(report, mermaid), encoding="utf-8")
-    mermaid_path.write_text(mermaid, encoding="utf-8")
-    cleanup_plan_path.write_text(json.dumps(cleanup_plan, indent=2), encoding="utf-8")
-    dashboard_path.write_text(
-        render_html(report, cleanup_plan, comparison), encoding="utf-8"
-    )
+    write_report(json_path, json.dumps(report, indent=2))
+    write_report(markdown_path, render_markdown(report, mermaid))
+    write_report(mermaid_path, mermaid)
+    write_report(cleanup_plan_path, json.dumps(cleanup_plan, indent=2))
+    write_report(dashboard_path, render_html(report, cleanup_plan, comparison))
     if comparison:
-        comparison_json_path.write_text(
-            json.dumps(comparison, indent=2), encoding="utf-8"
-        )
-        comparison_markdown_path.write_text(
-            render_comparison_markdown(comparison), encoding="utf-8"
-        )
+        write_report(comparison_json_path, json.dumps(comparison, indent=2))
+        write_report(comparison_markdown_path, render_comparison_markdown(comparison))
     print(markdown_path)
     print(json_path)
     print(mermaid_path)

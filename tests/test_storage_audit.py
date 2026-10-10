@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import stat
 import sys
 import tempfile
 import unittest
@@ -16,6 +17,106 @@ SPEC.loader.exec_module(storage_audit)
 
 
 class StorageAuditTests(unittest.TestCase):
+    def run_fixture_audit(self, home: Path, output: Path) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), "--home", str(home), "--output-dir", str(output)],
+            capture_output=True, text=True,
+        )
+
+    @unittest.skipUnless(os.name == "posix", "POSIX symlinks")
+    def test_report_symlinks_are_refused_before_any_outputs_change(self) -> None:
+        names = (
+            "storage-audit.json", "storage-audit.md", "storage-map.mmd",
+            "storage-dashboard.html", "cleanup-plan.json",
+            "storage-comparison.json", "storage-comparison.md",
+        )
+        for name in names:
+            for dangling in (False, True):
+                with self.subTest(name=name, dangling=dangling), tempfile.TemporaryDirectory() as temp:
+                    root = Path(temp)
+                    home = root / "home"
+                    home.mkdir()
+                    output = root / "output"
+                    self.assertEqual(self.run_fixture_audit(home, output).returncode, 0)
+                    target = root / "unrelated.txt"
+                    report = output / name
+                    contents = report.read_bytes() if report.exists() else b"Synthetic unrelated data."
+                    if not dangling:
+                        target.write_bytes(contents)
+                    report.unlink(missing_ok=True)
+                    report.symlink_to(target)
+                    originals = {p.name: p.read_bytes() for p in output.iterdir() if not p.is_symlink()}
+
+                    result = self.run_fixture_audit(home, output)
+
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("report destination", result.stderr)
+                    self.assertTrue(report.is_symlink())
+                    self.assertEqual({p.name: p.read_bytes() for p in output.iterdir() if not p.is_symlink()}, originals)
+                    if dangling:
+                        self.assertFalse(target.exists())
+                    else:
+                        self.assertEqual(target.read_bytes(), contents)
+
+    def test_report_directory_is_refused_before_any_outputs_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            home = root / "home"
+            home.mkdir()
+            output = root / "output"
+            self.assertEqual(self.run_fixture_audit(home, output).returncode, 0)
+            report = output / "cleanup-plan.json"
+            report.unlink()
+            report.mkdir()
+            originals = {p.name: p.read_bytes() for p in output.iterdir() if p.is_file()}
+
+            result = self.run_fixture_audit(home, output)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("report destination", result.stderr)
+            self.assertEqual({p.name: p.read_bytes() for p in output.iterdir() if p.is_file()}, originals)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX hard links")
+    def test_report_replacement_preserves_unrelated_hard_link_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            home = root / "home"
+            home.mkdir()
+            output = root / "output"
+            self.assertEqual(self.run_fixture_audit(home, output).returncode, 0)
+            target = root / "unrelated.txt"
+            target.write_text("Synthetic unrelated data.")
+            report = output / "cleanup-plan.json"
+            report.unlink()
+            os.link(target, report)
+
+            result = self.run_fixture_audit(home, output)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(target.read_text(), "Synthetic unrelated data.")
+            self.assertEqual(json.loads(report.read_text())["state"], "DRAFT_REVIEW_ONLY")
+            self.assertNotEqual(report.stat().st_ino, target.stat().st_ino)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX file permissions")
+    def test_new_report_directory_and_reports_are_private(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            home = root / "home"
+            home.mkdir()
+            output = root / "output"
+            previous = os.umask(0o022)
+            try:
+                for _ in range(2):
+                    result = self.run_fixture_audit(home, output)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o700)
+                    for report in output.iterdir():
+                        self.assertEqual(stat.S_IMODE(report.stat().st_mode), 0o600)
+            finally:
+                os.umask(previous)
+
+            self.assertEqual(len(list(output.iterdir())), 7)
+
     def test_human_size(self) -> None:
         self.assertEqual(storage_audit.human_size(1024), "1.0 KiB")
         self.assertEqual(storage_audit.human_size(1024**3), "1.0 GiB")
