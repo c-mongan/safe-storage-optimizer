@@ -48,6 +48,7 @@ python3 scripts/storage_audit.py --output-dir ./audit-output --baseline ./before
 The activity dates show the newest content modification found during the scan. They do not prove that an app or folder is unused.
 
 Audit reports contain full local paths and filenames. Review and redact them before sharing.
+New output folders and reports use owner-only permissions on POSIX systems. The scanner refuses symlinked or non-file report destinations before changing any reports, and replaces existing regular reports atomically.
 
 ## Safety model
 
