@@ -59,7 +59,14 @@ def activity_label(item: dict[str, Any]) -> str:
 
 def is_cloud_path(path: Path) -> bool:
     lowered = {part.lower() for part in path.parts}
-    return any(marker in lowered for marker in CLOUD_MARKERS)
+    return any(
+        part in CLOUD_MARKERS
+        or (
+            part.startswith("onedrive - ")
+            and bool(part.removeprefix("onedrive - ").strip())
+        )
+        for part in lowered
+    )
 
 
 def candidate_roots(home: Path, system: str, deep_home: bool) -> list[Path]:

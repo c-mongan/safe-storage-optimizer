@@ -37,6 +37,59 @@ class StorageAuditTests(unittest.TestCase):
             self.assertEqual(scanner.files, 1)
             self.assertIn(str(home / "OneDrive"), scanner.cloud_skips)
 
+    def test_named_onedrive_paths_are_skipped_by_default(self) -> None:
+        for name in ("OneDrive - Personal", "OneDrive - Company"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                home = Path(temp)
+                cloud = home / name
+                cloud.mkdir()
+                (home / "local.bin").write_bytes(b"a" * 10)
+                (cloud / "cloud.bin").write_bytes(b"b" * 20)
+                scanner = storage_audit.Scanner(10, 20, include_cloud=False)
+
+                self.assertEqual(scanner.scan(home), 10)
+                self.assertEqual(scanner.files, 1)
+                self.assertEqual(scanner.cloud_skips, [str(cloud)])
+
+    def test_onedrive_path_detection_is_case_insensitive(self) -> None:
+        for name in ("oNeDrIvE", "oNeDrIvE - pErSoNaL", "oNeDrIvE - cOmPaNy"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                cloud = Path(temp) / name
+                nested = cloud / "private"
+                nested.mkdir(parents=True)
+                (nested / "cloud.bin").write_bytes(b"b" * 20)
+                scanner = storage_audit.Scanner(10, 20, include_cloud=False)
+
+                self.assertEqual(scanner.scan(nested), 0)
+                self.assertEqual(scanner.files, 0)
+                self.assertEqual(scanner.cloud_skips, [str(nested)])
+
+    def test_onedrive_paths_can_be_included_explicitly(self) -> None:
+        for name in ("OneDrive", "OneDrive - Personal", "OneDrive - Company"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                home = Path(temp)
+                cloud = home / name
+                cloud.mkdir()
+                (cloud / "cloud.bin").write_bytes(b"b" * 20)
+                scanner = storage_audit.Scanner(10, 20, include_cloud=True)
+
+                self.assertEqual(scanner.scan(home), 20)
+                self.assertEqual(scanner.files, 1)
+                self.assertEqual(scanner.cloud_skips, [])
+
+    def test_similarly_named_local_folders_are_scanned(self) -> None:
+        for name in ("OneDriveBackup", "My OneDrive", "OneDrive- Company", "OneDrive -"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                home = Path(temp)
+                local = home / name
+                local.mkdir()
+                (local / "local.bin").write_bytes(b"a" * 10)
+                scanner = storage_audit.Scanner(10, 20, include_cloud=False)
+
+                self.assertEqual(scanner.scan(home), 10)
+                self.assertEqual(scanner.files, 1)
+                self.assertEqual(scanner.cloud_skips, [])
+
     def test_output_directory_can_be_excluded(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             home = Path(temp)
