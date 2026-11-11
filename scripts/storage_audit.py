@@ -532,6 +532,8 @@ def write_report(path: Path, contents: str) -> None:
     descriptor, temporary = tempfile.mkstemp(prefix=".storage-audit-", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            # mkstemp's 0600 is still filtered by the umask, so set it explicitly.
+            os.chmod(temporary, 0o600)
             stream.write(contents)
         os.replace(temporary, path)
     finally:
@@ -555,7 +557,14 @@ def main() -> int:
 
     home = args.home.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
-    output_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        output_dir.mkdir(parents=True, mode=0o700)
+    except FileExistsError:
+        if not output_dir.is_dir():
+            raise
+    else:
+        # The mkdir mode is filtered by the umask; existing folders keep their mode.
+        output_dir.chmod(0o700)
 
     json_path = output_dir / "storage-audit.json"
     markdown_path = output_dir / "storage-audit.md"

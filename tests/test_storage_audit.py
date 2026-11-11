@@ -117,6 +117,39 @@ class StorageAuditTests(unittest.TestCase):
 
             self.assertEqual(len(list(output.iterdir())), 7)
 
+    @unittest.skipUnless(os.name == "posix", "POSIX file permissions")
+    def test_restrictive_umask_still_creates_private_reports(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            home = root / "home"
+            home.mkdir()
+            output = root / "output"
+            previous = os.umask(0o777)
+            try:
+                result = self.run_fixture_audit(home, output)
+            finally:
+                os.umask(previous)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o700)
+            for report in output.iterdir():
+                self.assertEqual(stat.S_IMODE(report.stat().st_mode), 0o600)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX file permissions")
+    def test_existing_report_directory_keeps_its_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            home = root / "home"
+            home.mkdir()
+            output = root / "output"
+            output.mkdir()
+            output.chmod(0o750)
+
+            result = self.run_fixture_audit(home, output)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o750)
+
     def test_human_size(self) -> None:
         self.assertEqual(storage_audit.human_size(1024), "1.0 KiB")
         self.assertEqual(storage_audit.human_size(1024**3), "1.0 GiB")
